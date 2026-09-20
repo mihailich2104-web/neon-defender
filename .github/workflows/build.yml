@@ -21,8 +21,14 @@ jobs:
           pip install pygame numpy pyinstaller pillow
 
       - name: Build exe with PyInstaller
+        shell: bash
         run: |
-          pyinstaller --onefile --noconsole --name NeonDefender --icon=icon.ico game.py
+          if [ -f icon.ico ]; then
+            pyinstaller --onefile --noconsole --name NeonDefender --icon=icon.ico game.py
+          else
+            echo "icon.ico not found, building without custom icon"
+            pyinstaller --onefile --noconsole --name NeonDefender game.py
+          fi
 
       - name: Install Inno Setup
         run: |
@@ -31,7 +37,16 @@ jobs:
       - name: Write Inno Setup script
         shell: bash
         run: |
-          cat > installer.iss << 'EOF'
+          if [ -f icon.ico ]; then
+            ICON_LINE="SetupIconFile=icon.ico"
+            ICON_FILE_LINE='Source: "icon.ico"; DestDir: "{app}"; Flags: ignoreversion'
+            ICON_ARG='; IconFilename: "{app}\icon.ico"'
+          else
+            ICON_LINE=""
+            ICON_FILE_LINE=""
+            ICON_ARG=""
+          fi
+          cat > installer.iss << EOF
           [Setup]
           AppName=Neon Defender
           AppVersion=1.0
@@ -41,16 +56,15 @@ jobs:
           OutputDir=dist_installer
           Compression=lzma
           SolidCompression=yes
-
-          SetupIconFile=icon.ico
+          $ICON_LINE
 
           [Files]
           Source: "dist\NeonDefender.exe"; DestDir: "{app}"; Flags: ignoreversion
-          Source: "icon.ico"; DestDir: "{app}"; Flags: ignoreversion
+          $ICON_FILE_LINE
 
           [Icons]
-          Name: "{group}\Neon Defender"; Filename: "{app}\NeonDefender.exe"; IconFilename: "{app}\icon.ico"
-          Name: "{autodesktop}\Neon Defender"; Filename: "{app}\NeonDefender.exe"; IconFilename: "{app}\icon.ico"
+          Name: "{group}\Neon Defender"; Filename: "{app}\NeonDefender.exe"$ICON_ARG
+          Name: "{autodesktop}\Neon Defender"; Filename: "{app}\NeonDefender.exe"$ICON_ARG
           EOF
 
       - name: Compile installer
