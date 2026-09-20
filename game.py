@@ -18,8 +18,16 @@ from dataclasses import dataclass, field
 from typing import List, Tuple
 
 pygame.init()
-pygame.mixer.pre_init(44100, -16, 2, 512)
-pygame.mixer.init()
+
+SOUND_ENABLED = True
+try:
+    pygame.mixer.pre_init(44100, -16, 2, 512)
+    pygame.mixer.init()
+except pygame.error:
+    # No usable audio device on this machine (e.g. WASAPI can't find an
+    # endpoint on some VMs/RDP sessions). Keep the game fully playable
+    # without sound instead of crashing.
+    SOUND_ENABLED = False
 
 WIDTH, HEIGHT = 1024, 640
 FPS = 60
@@ -139,7 +147,18 @@ def generate_nebula_layer(seed, tint, density) -> pygame.Surface:
     return surf
 
 
-def synthesize_sound(freq=440.0, duration=0.15, wave="sine", decay=6.0, noise_amt=0.0) -> pygame.mixer.Sound:
+class _SilentSound:
+    """Drop-in stand-in for pygame.mixer.Sound when no audio device exists."""
+    def play(self, *a, **kw):
+        pass
+
+    def set_volume(self, *a, **kw):
+        pass
+
+
+def synthesize_sound(freq=440.0, duration=0.15, wave="sine", decay=6.0, noise_amt=0.0):
+    if not SOUND_ENABLED:
+        return _SilentSound()
     sr = 44100
     n = int(sr * duration)
     t = np.linspace(0, duration, n, False)
@@ -156,6 +175,10 @@ def synthesize_sound(freq=440.0, duration=0.15, wave="sine", decay=6.0, noise_am
     env = np.exp(-decay * t / duration)
     data = tone * env
     audio = np.clip(data * 32767 * 0.5, -32768, 32767).astype(np.int16)
+    # The actual mixer may have been opened in stereo even though we asked
+    # for mono (driver-dependent on some Windows machines) — match whatever
+    # channel count pygame actually gave us, or make_sound raises a
+    # "must be 2-dimensional" ValueError.
     init = pygame.mixer.get_init()
     channels = init[2] if init else 1
     if channels and channels > 1:
@@ -255,14 +278,13 @@ class Renderer:
         if amount <= 0:
             return surface
         w, h = surface.get_size()
-        r = pygame.Surface((w, h), pygame.SRCALPHA)
+        r = pygame.Surface((w, h))
         arr = pygame.surfarray.array3d(surface)
         red = np.roll(arr[:, :, 0], amount, axis=0)
         green = arr[:, :, 1]
         blue = np.roll(arr[:, :, 2], -amount, axis=0)
         out = np.dstack([red, green, blue])
         pygame.surfarray.blit_array(r, out)
-        r.set_alpha(255)
         return r
 
     def apply_vignette(self, surface, cache=[None]):
@@ -324,7 +346,8 @@ class Particle:
         if s < 0.5:
             return
         p = pygame.Surface((int(s * 2) + 2, int(s * 2) + 2), pygame.SRCALPHA)
-        pygame.draw.circle(p, (*self.color, a), p.get_size()[0] // 2, max(1, int(s)))
+        half = p.get_size()[0] // 2
+        pygame.draw.circle(p, (*self.color, a), (half, half), max(1, int(s)))
         surf.blit(p, (self.x - p.get_width() / 2, self.y - p.get_height() / 2), special_flags=pygame.BLEND_RGBA_ADD)
 
 
