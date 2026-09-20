@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from typing import List, Tuple
 
 pygame.init()
-pygame.mixer.pre_init(44100, -16, 1, 512)
+pygame.mixer.pre_init(44100, -16, 2, 512)
 pygame.mixer.init()
 
 WIDTH, HEIGHT = 1024, 640
@@ -156,6 +156,10 @@ def synthesize_sound(freq=440.0, duration=0.15, wave="sine", decay=6.0, noise_am
     env = np.exp(-decay * t / duration)
     data = tone * env
     audio = np.clip(data * 32767 * 0.5, -32768, 32767).astype(np.int16)
+    init = pygame.mixer.get_init()
+    channels = init[2] if init else 1
+    if channels and channels > 1:
+        audio = np.repeat(audio.reshape(-1, 1), channels, axis=1)
     return pygame.sndarray.make_sound(np.ascontiguousarray(audio))
 
 
