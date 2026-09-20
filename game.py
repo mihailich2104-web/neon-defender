@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ═══════════════════════════════════════════════════════════════
 # NEON DEFENDER — single-file arcade shooter
-# All assets (sprites, sounds, icon) are generated procedurally.
+# Ship textures are embedded as base64 PNG data (no external files).
 # Controls: WASD/Arrows move, SPACE shoot, F11 fullscreen, F3 scanlines,
 #           ESC pause/menu
 # ═══════════════════════════════════════════════════════════════
@@ -14,6 +14,8 @@ import random
 import json
 import os
 import sys
+import io
+import base64
 from dataclasses import dataclass, field
 from typing import List, Tuple
 
@@ -42,17 +44,76 @@ NEON_YELLOW = (255, 230, 80)
 NEON_GREEN = (90, 255, 130)
 NEON_RED = (255, 70, 70)
 
+QUALITY_LEVELS = ["low", "medium", "high"]
+LANGUAGES = ["ru", "en"]
+
+TEXTS = {
+    "ru": {
+        "title": "NEON DEFENDER",
+        "start_hint": "Пробел — начать игру",
+        "settings_hint": "S — настройки",
+        "best_score": "Рекорд: {0}",
+        "controls_hint": "WASD/стрелки движение  •  ПРОБЕЛ стрельба  •  F11 полный экран  •  F3 линии сканирования",
+        "score": "СЧЁТ {0}",
+        "best": "РЕКОРД {0}",
+        "wave": "ВОЛНА {0}",
+        "combo": "x{0} КОМБО",
+        "game_over": "ИГРА ОКОНЧЕНА",
+        "your_score": "Счёт: {0}",
+        "new_record": "НОВЫЙ РЕКОРД!",
+        "best_label": "Рекорд: {0}",
+        "return_hint": "Пробел — вернуться в меню",
+        "settings_title": "НАСТРОЙКИ",
+        "language_label": "Язык",
+        "graphics_label": "Графика",
+        "back_label": "Назад",
+        "quality_names": {"low": "Низкая", "medium": "Средняя", "high": "Высокая"},
+        "lang_names": {"ru": "Русский", "en": "English"},
+        "settings_hint2": "←/→ изменить  •  ↑/↓ выбрать  •  ESC назад",
+    },
+    "en": {
+        "title": "NEON DEFENDER",
+        "start_hint": "Press SPACE to start",
+        "settings_hint": "S — settings",
+        "best_score": "Best: {0}",
+        "controls_hint": "WASD/Arrows move  •  SPACE shoot  •  F11 fullscreen  •  F3 scanlines",
+        "score": "SCORE {0}",
+        "best": "BEST {0}",
+        "wave": "WAVE {0}",
+        "combo": "x{0} COMBO",
+        "game_over": "GAME OVER",
+        "your_score": "Score: {0}",
+        "new_record": "NEW RECORD!",
+        "best_label": "Best: {0}",
+        "return_hint": "Press SPACE to return to menu",
+        "settings_title": "SETTINGS",
+        "language_label": "Language",
+        "graphics_label": "Graphics",
+        "back_label": "Back",
+        "quality_names": {"low": "Low", "medium": "Medium", "high": "High"},
+        "lang_names": {"ru": "Русский", "en": "English"},
+        "settings_hint2": "LEFT/RIGHT change  •  UP/DOWN select  •  ESC back",
+    },
+}
+
 
 def clamp(v, lo, hi):
     return max(lo, min(hi, v))
 
 
 def load_save():
+    default = {"highscore": 0, "lang": "ru", "graphics": "high"}
     try:
         with open(SAVE_PATH, "r") as f:
-            return json.load(f)
+            data = json.load(f)
+        default.update(data)
     except Exception:
-        return {"highscore": 0}
+        pass
+    if default.get("lang") not in LANGUAGES:
+        default["lang"] = "ru"
+    if default.get("graphics") not in QUALITY_LEVELS:
+        default["graphics"] = "high"
+    return default
 
 
 def write_save(data):
@@ -64,69 +125,100 @@ def write_save(data):
         pass
 
 
-# ═══════════════════ SECTION 2: PROCEDURAL ASSET GENERATION ═══════════════════
+# ═══════════════════ EMBEDDED SHIP TEXTURES (base64 PNG) ═══════════════════
+# Real pixel-art ship textures, embedded directly so the whole game stays
+# a single .py file with no external assets.
+
+PLAYER_SHIP_B64 = "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"
+
+ENEMY_SHIP_B64 = "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"
+
+
+def _surface_from_b64(b64_data):
+    raw = base64.b64decode(b64_data)
+    surf = pygame.image.load(io.BytesIO(raw))
+    return surf.convert_alpha()
+
+
+def _tint_surface(surf, tint, strength=0.35):
+    """Multiply-tint a surface with a color, preserving its alpha mask."""
+    out = surf.copy()
+    arr = pygame.surfarray.pixels3d(out)
+    tint_arr = np.array(tint, dtype=np.float32)
+    arr[:] = (arr.astype(np.float32) * (1 - strength) + tint_arr * strength).clip(0, 255).astype(np.uint8)
+    del arr
+    return out
+
+
+# ═══════════════════ SECTION 2: PROCEDURAL ASSET GENERATION ═══════════════
 
 def _glow_circle(radius, color, falloff=2.2):
-    """Radial-gradient soft circle used as a base for sprites/particles/light."""
+    """Radial-gradient soft circle used as a base for particles/light glows.
+    Built once at startup via numpy (fast), not per-pixel Python loops."""
     size = radius * 2
+    yy, xx = np.mgrid[0:size, 0:size]
+    d = np.hypot(xx - radius, yy - radius) / radius
+    d = np.clip(d, 0, 1)
+    alpha = (255 * (1 - d) ** falloff).astype(np.uint8)
+    alpha[d >= 1] = 0
     surf = pygame.Surface((size, size), pygame.SRCALPHA)
-    cx = cy = radius
-    for y in range(size):
-        for x in range(0, size, 2):  # step 2 for perf, then blit doubled column
-            dx, dy = x - cx, y - cy
-            d = math.hypot(dx, dy) / radius
-            if d > 1:
-                continue
-            a = int(255 * (1 - d) ** falloff)
-            pygame.draw.line(surf, (*color, a), (x, y), (x + 1, y))
-    return surf
+    arr = pygame.surfarray.pixels3d(surf)
+    arr[:, :, 0] = color[0]
+    arr[:, :, 1] = color[1]
+    arr[:, :, 2] = color[2]
+    del arr
+    alpha_arr = pygame.surfarray.pixels_alpha(surf)
+    alpha_arr[:, :] = alpha.T
+    del alpha_arr
+    return surf.convert_alpha()
 
 
 def generate_player_sprite() -> pygame.Surface:
-    w, h = 48, 56
-    surf = pygame.Surface((w, h), pygame.SRCALPHA)
-    body = [(w // 2, 2), (w - 6, h - 14), (w // 2, h - 22), (6, h - 14)]
-    pygame.draw.polygon(surf, (20, 40, 60), body)
-    pygame.draw.polygon(surf, NEON_CYAN, body, 3)
-    pygame.draw.polygon(surf, (*NEON_CYAN, 90), [(w // 2, 10), (w - 14, h - 20), (w // 2, h - 26), (14, h - 20)])
-    pygame.draw.circle(surf, (*NEON_PINK, 200), (w // 2, h // 2 - 4), 5)
-    engine = pygame.Surface((16, 20), pygame.SRCALPHA)
-    pygame.draw.polygon(engine, (*NEON_YELLOW, 160), [(8, 0), (16, 20), (0, 20)])
-    surf.blit(engine, (w // 2 - 8, h - 18), special_flags=pygame.BLEND_RGBA_ADD)
-    return surf
+    try:
+        return _surface_from_b64(PLAYER_SHIP_B64)
+    except Exception:
+        w, h = 48, 56
+        surf = pygame.Surface((w, h), pygame.SRCALPHA)
+        body = [(w // 2, 2), (w - 6, h - 14), (w // 2, h - 22), (6, h - 14)]
+        pygame.draw.polygon(surf, (20, 40, 60), body)
+        pygame.draw.polygon(surf, NEON_CYAN, body, 3)
+        return surf.convert_alpha()
+
+
+def _scale_keep_aspect(surf, target_height):
+    w, h = surf.get_size()
+    scale = target_height / h
+    return pygame.transform.smoothscale(surf, (max(1, int(w * scale)), target_height))
 
 
 def generate_enemy_sprite(kind: str) -> pygame.Surface:
-    w, h = 40, 40
-    surf = pygame.Surface((w, h), pygame.SRCALPHA)
-    if kind == "drone":
-        pygame.draw.circle(surf, (40, 10, 20), (w // 2, h // 2), 14)
+    try:
+        base = _surface_from_b64(ENEMY_SHIP_B64)
+        tint = {"drone": NEON_RED, "fighter": NEON_YELLOW, "tank": NEON_PINK}.get(kind, NEON_RED)
+        strength = {"drone": 0.0, "fighter": 0.4, "tank": 0.4}.get(kind, 0.0)
+        heights = {"drone": 46, "fighter": 56, "tank": 68}
+        surf = _tint_surface(base, tint, strength) if strength > 0 else base
+        surf = _scale_keep_aspect(surf, heights.get(kind, 50))
+        return surf.convert_alpha()
+    except Exception:
+        w, h = 40, 40
+        surf = pygame.Surface((w, h), pygame.SRCALPHA)
         pygame.draw.circle(surf, NEON_RED, (w // 2, h // 2), 14, 3)
-        for a in range(0, 360, 45):
-            x = w // 2 + int(18 * math.cos(math.radians(a)))
-            y = h // 2 + int(18 * math.sin(math.radians(a)))
-            pygame.draw.line(surf, (*NEON_RED, 120), (w // 2, h // 2), (x, y), 2)
-    elif kind == "fighter":
-        pts = [(w // 2, h - 4), (4, 6), (w // 2, 16), (w - 4, 6)]
-        pygame.draw.polygon(surf, (40, 15, 5), pts)
-        pygame.draw.polygon(surf, NEON_YELLOW, pts, 3)
-    else:  # tank
-        pygame.draw.rect(surf, (30, 10, 30), (4, 4, w - 8, h - 8), border_radius=6)
-        pygame.draw.rect(surf, NEON_PINK, (4, 4, w - 8, h - 8), 3, border_radius=6)
-        pygame.draw.circle(surf, NEON_PINK, (w // 2, h // 2), 6)
-    return surf
+        return surf.convert_alpha()
 
 
 def generate_boss_sprite() -> pygame.Surface:
-    w, h = 140, 100
-    surf = pygame.Surface((w, h), pygame.SRCALPHA)
-    pygame.draw.ellipse(surf, (40, 5, 20), (0, 10, w, h - 20))
-    pygame.draw.ellipse(surf, NEON_RED, (0, 10, w, h - 20), 4)
-    for i in range(6):
-        x = 14 + i * (w - 28) // 5
-        pygame.draw.circle(surf, NEON_YELLOW, (x, h - 18), 6)
-    pygame.draw.circle(surf, (*NEON_PINK, 220), (w // 2, h // 2), 14)
-    return surf
+    try:
+        base = _surface_from_b64(ENEMY_SHIP_B64)
+        boss = _tint_surface(base, NEON_RED, 0.5)
+        boss = _scale_keep_aspect(boss, 130)
+        boss = pygame.transform.rotate(boss, 180)
+        return boss.convert_alpha()
+    except Exception:
+        w, h = 140, 100
+        surf = pygame.Surface((w, h), pygame.SRCALPHA)
+        pygame.draw.ellipse(surf, NEON_RED, (0, 10, w, h - 20), 4)
+        return surf.convert_alpha()
 
 
 def generate_nebula_layer(seed, tint, density) -> pygame.Surface:
@@ -144,16 +236,7 @@ def generate_nebula_layer(seed, tint, density) -> pygame.Surface:
         s = rng.choice([1, 1, 1, 2])
         b = rng.randint(120, 255)
         surf.fill((b, b, b, b), (x, y, s, s))
-    return surf
-
-
-class _SilentSound:
-    """Drop-in stand-in for pygame.mixer.Sound when no audio device exists."""
-    def play(self, *a, **kw):
-        pass
-
-    def set_volume(self, *a, **kw):
-        pass
+    return surf.convert_alpha()
 
 
 def synthesize_sound(freq=440.0, duration=0.15, wave="sine", decay=6.0, noise_amt=0.0):
@@ -175,15 +258,20 @@ def synthesize_sound(freq=440.0, duration=0.15, wave="sine", decay=6.0, noise_am
     env = np.exp(-decay * t / duration)
     data = tone * env
     audio = np.clip(data * 32767 * 0.5, -32768, 32767).astype(np.int16)
-    # The actual mixer may have been opened in stereo even though we asked
-    # for mono (driver-dependent on some Windows machines) — match whatever
-    # channel count pygame actually gave us, or make_sound raises a
-    # "must be 2-dimensional" ValueError.
     init = pygame.mixer.get_init()
     channels = init[2] if init else 1
     if channels and channels > 1:
         audio = np.repeat(audio.reshape(-1, 1), channels, axis=1)
     return pygame.sndarray.make_sound(np.ascontiguousarray(audio))
+
+
+class _SilentSound:
+    """Drop-in stand-in for pygame.mixer.Sound when no audio device exists."""
+    def play(self, *a, **kw):
+        pass
+
+    def set_volume(self, *a, **kw):
+        pass
 
 
 def generate_icon_ico(path: str):
@@ -204,7 +292,7 @@ def generate_icon_ico(path: str):
 
 
 class Assets:
-    """Lazily-built, cached procedural asset bank."""
+    """Lazily-built, cached procedural + embedded asset bank."""
     def __init__(self):
         self.player = generate_player_sprite()
         self.enemies = {k: generate_enemy_sprite(k) for k in ("drone", "fighter", "tank")}
@@ -231,18 +319,25 @@ class Assets:
 # ═══════════════════ SECTION 3: GRAPHICS ENGINE (post-fx) ═══════════════════
 
 class Renderer:
+    """Post-processing pipeline. All effects are gated by a quality level
+    (low/medium/high) so the game stays smooth on weaker machines."""
+
     def __init__(self, screen):
         self.screen = screen
         self.shake_time = 0.0
         self.shake_mag = 0.0
         self.scanlines_on = True
+        self.quality = "high"
         self._scan_cache = self._build_scanlines()
+        self._vignette_cache = None
 
     def _build_scanlines(self):
         s = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        for y in range(0, HEIGHT, 2):
-            pygame.draw.line(s, (0, 0, 0, 40), (0, y), (WIDTH, y))
-        return s
+        arr = pygame.surfarray.pixels_alpha(s)
+        arr[:, ::2] = 40
+        arr[:, 1::2] = 0
+        del arr
+        return s.convert_alpha()
 
     def trigger_shake(self, magnitude, duration):
         self.shake_mag = max(self.shake_mag, magnitude)
@@ -259,7 +354,11 @@ class Renderer:
             return (0, 0)
         return (random.uniform(-1, 1) * self.shake_mag, random.uniform(-1, 1) * self.shake_mag)
 
-    def apply_bloom(self, surface, threshold=180, passes=3, downscale=4):
+    def apply_bloom(self, surface, threshold=180):
+        if self.quality == "low":
+            return surface
+        passes = 1 if self.quality == "medium" else 3
+        downscale = 6 if self.quality == "medium" else 4
         w, h = surface.get_size()
         bright = surface.copy()
         arr = pygame.surfarray.pixels3d(bright)
@@ -275,7 +374,7 @@ class Renderer:
         return surface
 
     def apply_chromatic_aberration(self, surface, amount):
-        if amount <= 0:
+        if amount <= 0 or self.quality == "low":
             return surface
         w, h = surface.get_size()
         r = pygame.Surface((w, h))
@@ -287,32 +386,36 @@ class Renderer:
         pygame.surfarray.blit_array(r, out)
         return r
 
-    def apply_vignette(self, surface, cache=[None]):
-        if cache[0] is None:
-            v = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+    def apply_vignette(self, surface):
+        if self.quality == "low":
+            return surface
+        if self._vignette_cache is None:
+            yy, xx = np.mgrid[0:HEIGHT, 0:WIDTH]
             cx, cy = WIDTH / 2, HEIGHT / 2
             maxd = math.hypot(cx, cy)
-            for y in range(0, HEIGHT, 3):
-                for x in range(0, WIDTH, 3):
-                    d = math.hypot(x - cx, y - cy) / maxd
-                    a = int(clamp((d - 0.55) * 260, 0, 170))
-                    if a:
-                        pygame.draw.rect(v, (0, 0, 0, a), (x, y, 3, 3))
-            cache[0] = v
-        surface.blit(cache[0], (0, 0))
+            d = np.hypot(xx - cx, yy - cy) / maxd
+            a = np.clip((d - 0.55) * 260, 0, 170).astype(np.uint8)
+            v = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+            alpha_arr = pygame.surfarray.pixels_alpha(v)
+            alpha_arr[:, :] = a.T
+            del alpha_arr
+            self._vignette_cache = v.convert_alpha()
+        surface.blit(self._vignette_cache, (0, 0))
         return surface
 
     def apply_scanlines(self, surface):
-        if self.scanlines_on:
+        if self.scanlines_on and self.quality != "low":
             surface.blit(self._scan_cache, (0, 0))
         return surface
 
-    def apply_grain(self, surface, amount=6):
+    def apply_grain(self, surface, amount=5):
+        if self.quality != "high":
+            return surface
         w, h = surface.get_size()
-        noise = (np.random.randint(-amount, amount, (w, h)))
+        noise = np.random.randint(-amount, amount, (w, h))
         arr = pygame.surfarray.pixels3d(surface)
         for c in range(3):
-            arr[:, :, c] = np.clip(arr[:, :, c].astype(int) + noise, 0, 255)
+            arr[:, :, c] = np.clip(arr[:, :, c].astype(np.int16) + noise, 0, 255)
         del arr
         return surface
 
@@ -340,25 +443,40 @@ class Particle:
         return self.life > 0
 
     def draw(self, surf):
+        # Additive circle drawn directly onto the target surface — no
+        # per-particle Surface allocation, which keeps large particle
+        # counts smooth.
         t = clamp(self.life / self.max_life, 0, 1)
-        a = int(255 * t)
         s = self.size * (t if self.shrink else 1)
-        if s < 0.5:
+        if s < 0.6:
             return
-        p = pygame.Surface((int(s * 2) + 2, int(s * 2) + 2), pygame.SRCALPHA)
-        half = p.get_size()[0] // 2
-        pygame.draw.circle(p, (*self.color, a), (half, half), max(1, int(s)))
-        surf.blit(p, (self.x - p.get_width() / 2, self.y - p.get_height() / 2), special_flags=pygame.BLEND_RGBA_ADD)
+        fade = 0.3 + 0.7 * t
+        color = (int(self.color[0] * fade), int(self.color[1] * fade), int(self.color[2] * fade))
+        pygame.draw.circle(surf, color, (int(self.x), int(self.y)), max(1, int(s)), special_flags=pygame.BLEND_RGB_ADD)
 
 
 class ParticleSystem:
     """Container managing every particle emitter kind requested."""
-    def __init__(self):
+    def __init__(self, quality_mult=1.0):
         self.particles: List[Particle] = []
         self.shockwaves: List[dict] = []
         self.lightning: List[dict] = []
+        self.quality_mult = quality_mult
+        self.max_particles = int(260 * quality_mult) + 40
+
+    def _n(self, count):
+        return max(1, int(count * self.quality_mult))
+
+    def set_quality_mult(self, mult):
+        self.quality_mult = mult
+        self.max_particles = int(260 * mult) + 40
+
+    def _cap(self):
+        if len(self.particles) > self.max_particles:
+            del self.particles[: len(self.particles) - self.max_particles]
 
     def explosion(self, x, y, color=NEON_YELLOW, n=40):
+        n = self._n(n)
         for _ in range(n):
             ang = random.uniform(0, math.tau)
             spd = random.uniform(40, 260)
@@ -370,26 +488,28 @@ class ParticleSystem:
             self.particles.append(Particle(x, y, math.cos(ang) * spd, math.sin(ang) * spd,
                                             random.uniform(0.6, 1.4), 1.4, (90, 90, 90), random.uniform(4, 9), gravity=-10))
         self.shockwaves.append({"x": x, "y": y, "r": 4, "max_r": 90, "life": 0.4, "max_life": 0.4})
+        self._cap()
 
     def engine_trail(self, x, y, dir_vec):
-        for _ in range(2):
-            jitter = random.uniform(-0.3, 0.3)
+        for _ in range(self._n(2)):
             vx = -dir_vec[0] * random.uniform(60, 140) + random.uniform(-20, 20)
             vy = -dir_vec[1] * random.uniform(60, 140) + random.uniform(-20, 20)
             self.particles.append(Particle(x, y, vx, vy, 0.35, 0.35, random.choice([NEON_CYAN, NEON_PINK]), random.uniform(2, 4)))
+        self._cap()
 
     def bullet_trail(self, x, y, color):
         self.particles.append(Particle(x, y, 0, 0, 0.15, 0.15, color, 3, shrink=True))
 
     def blood(self, x, y, color=NEON_RED, n=14):
-        for _ in range(n):
+        for _ in range(self._n(n)):
             ang = random.uniform(0, math.tau)
             spd = random.uniform(30, 150)
             self.particles.append(Particle(x, y, math.cos(ang) * spd, math.sin(ang) * spd,
                                             random.uniform(0.2, 0.5), 0.5, color, random.uniform(1, 3)))
+        self._cap()
 
     def stardust(self):
-        if random.random() < 0.5:
+        if random.random() < 0.5 * self.quality_mult:
             x = random.uniform(0, WIDTH)
             self.particles.append(Particle(x, -4, random.uniform(-5, 5), random.uniform(20, 60),
                                             2.5, 2.5, (200, 220, 255), random.uniform(1, 2), shrink=False))
@@ -413,8 +533,8 @@ class ParticleSystem:
             p.draw(surf)
         for s in self.shockwaves:
             t = clamp(s["life"] / s["max_life"], 0, 1)
-            a = int(180 * t)
-            pygame.draw.circle(surf, (*NEON_CYAN, a), (int(s["x"]), int(s["y"])), int(s["r"]), 3)
+            col = (int(NEON_CYAN[0] * t), int(NEON_CYAN[1] * t), int(NEON_CYAN[2] * t))
+            pygame.draw.circle(surf, col, (int(s["x"]), int(s["y"])), int(s["r"]), 3, special_flags=pygame.BLEND_RGB_ADD)
         for l in self.lightning:
             pts = [l["a"]]
             x1, y1 = l["a"]
@@ -522,7 +642,7 @@ class Player:
             return
         surf.blit(self.sprite, (self.x - self.sprite.get_width() / 2, self.y - self.sprite.get_height() / 2))
         if self.shield:
-            pygame.draw.circle(surf, (*NEON_CYAN, 120), (int(self.x), int(self.y)), 34, 2)
+            pygame.draw.circle(surf, NEON_CYAN, (int(self.x), int(self.y)), 34, 2, special_flags=pygame.BLEND_RGB_ADD)
 
 
 class Enemy:
@@ -630,17 +750,17 @@ class Bonus:
 # ═══════════════════ SECTION 6: UI & MENUS ═══════════════════
 
 class HUD:
-    def draw(self, surf, assets, player, score, wave, combo, highscore):
+    def draw(self, surf, assets, player, score, wave, combo, highscore, texts):
         for i in range(player.lives):
             pygame.draw.circle(surf, NEON_CYAN, (24 + i * 26, 26), 9)
-        txt = assets.font_mid.render(f"SCORE {score}", True, NEON_CYAN)
+        txt = assets.font_mid.render(texts["score"].format(score), True, NEON_CYAN)
         surf.blit(txt, (WIDTH - txt.get_width() - 20, 14))
-        hs = assets.font_small.render(f"BEST {highscore}", True, (150, 200, 220))
+        hs = assets.font_small.render(texts["best"].format(highscore), True, (150, 200, 220))
         surf.blit(hs, (WIDTH - hs.get_width() - 20, 46))
-        wtxt = assets.font_small.render(f"WAVE {wave}", True, NEON_PINK)
+        wtxt = assets.font_small.render(texts["wave"].format(wave), True, NEON_PINK)
         surf.blit(wtxt, (WIDTH / 2 - wtxt.get_width() / 2, 14))
         if combo > 1:
-            ctxt = assets.font_mid.render(f"x{combo} COMBO", True, NEON_YELLOW)
+            ctxt = assets.font_mid.render(texts["combo"].format(combo), True, NEON_YELLOW)
             surf.blit(ctxt, (WIDTH / 2 - ctxt.get_width() / 2, 40))
 
 
@@ -652,45 +772,93 @@ class MainMenu:
     def update(self, dt):
         self.t += dt
 
-    def draw(self, surf, highscore):
-        title = self.assets.font_big.render("NEON DEFENDER", True, NEON_CYAN)
+    def draw(self, surf, highscore, texts):
+        title = self.assets.font_big.render(texts["title"], True, NEON_CYAN)
         pulse = 1 + 0.03 * math.sin(self.t * 3)
         title = pygame.transform.smoothscale(title, (int(title.get_width() * pulse), int(title.get_height() * pulse)))
-        surf.blit(title, (WIDTH / 2 - title.get_width() / 2, 140))
-        sub = self.assets.font_mid.render("Press SPACE to start", True, (200, 220, 255))
+        surf.blit(title, (WIDTH / 2 - title.get_width() / 2, 130))
+        sub = self.assets.font_mid.render(texts["start_hint"], True, (200, 220, 255))
         if int(self.t * 2) % 2 == 0:
-            surf.blit(sub, (WIDTH / 2 - sub.get_width() / 2, 300))
-        hs = self.assets.font_small.render(f"Best score: {highscore}", True, NEON_PINK)
-        surf.blit(hs, (WIDTH / 2 - hs.get_width() / 2, 360))
-        ctrl = self.assets.font_small.render("WASD/Arrows move  •  SPACE shoot  •  F11 fullscreen  •  F3 scanlines", True, (140, 160, 190))
+            surf.blit(sub, (WIDTH / 2 - sub.get_width() / 2, 290))
+        s2 = self.assets.font_small.render(texts["settings_hint"], True, (170, 190, 220))
+        surf.blit(s2, (WIDTH / 2 - s2.get_width() / 2, 330))
+        hs = self.assets.font_small.render(texts["best_score"].format(highscore), True, NEON_PINK)
+        surf.blit(hs, (WIDTH / 2 - hs.get_width() / 2, 370))
+        ctrl = self.assets.font_small.render(texts["controls_hint"], True, (140, 160, 190))
         surf.blit(ctrl, (WIDTH / 2 - ctrl.get_width() / 2, HEIGHT - 40))
+
+
+class SettingsMenu:
+    FIELDS = ["language", "graphics", "back"]
+
+    def __init__(self, assets):
+        self.assets = assets
+        self.selected = 0
+
+    def move(self, delta):
+        self.selected = (self.selected + delta) % len(self.FIELDS)
+
+    def change_value(self, save, delta):
+        field_name = self.FIELDS[self.selected]
+        if field_name == "language":
+            idx = LANGUAGES.index(save["lang"])
+            save["lang"] = LANGUAGES[(idx + delta) % len(LANGUAGES)]
+            return True
+        elif field_name == "graphics":
+            idx = QUALITY_LEVELS.index(save["graphics"])
+            save["graphics"] = QUALITY_LEVELS[(idx + delta) % len(QUALITY_LEVELS)]
+            return True
+        return False
+
+    def draw(self, surf, save, texts):
+        title = self.assets.font_big.render(texts["settings_title"], True, NEON_CYAN)
+        surf.blit(title, (WIDTH / 2 - title.get_width() / 2, 100))
+
+        rows = [
+            (texts["language_label"], texts["lang_names"][save["lang"]]),
+            (texts["graphics_label"], texts["quality_names"][save["graphics"]]),
+            (texts["back_label"], ""),
+        ]
+        start_y = 240
+        for i, (label, value) in enumerate(rows):
+            color = NEON_YELLOW if i == self.selected else (200, 220, 255)
+            prefix = "> " if i == self.selected else "   "
+            line = f"{prefix}{label}"
+            if value:
+                line += f"   <  {value}  >" if i == self.selected else f"      {value}"
+            txt = self.assets.font_mid.render(line, True, color)
+            surf.blit(txt, (WIDTH / 2 - txt.get_width() / 2, start_y + i * 50))
+
+        hint = self.assets.font_small.render(texts["settings_hint2"], True, (140, 160, 190))
+        surf.blit(hint, (WIDTH / 2 - hint.get_width() / 2, HEIGHT - 40))
 
 
 class GameOverScreen:
     def __init__(self, assets):
         self.assets = assets
 
-    def draw(self, surf, score, highscore, new_record):
-        t = self.assets.font_big.render("GAME OVER", True, NEON_RED)
+    def draw(self, surf, score, highscore, new_record, texts):
+        t = self.assets.font_big.render(texts["game_over"], True, NEON_RED)
         surf.blit(t, (WIDTH / 2 - t.get_width() / 2, 180))
-        s = self.assets.font_mid.render(f"Score: {score}", True, (255, 255, 255))
+        s = self.assets.font_mid.render(texts["your_score"].format(score), True, (255, 255, 255))
         surf.blit(s, (WIDTH / 2 - s.get_width() / 2, 260))
         if new_record:
-            r = self.assets.font_mid.render("NEW RECORD!", True, NEON_YELLOW)
+            r = self.assets.font_mid.render(texts["new_record"], True, NEON_YELLOW)
             surf.blit(r, (WIDTH / 2 - r.get_width() / 2, 300))
-        h = self.assets.font_small.render(f"Best: {highscore}", True, (180, 200, 220))
+        h = self.assets.font_small.render(texts["best_label"].format(highscore), True, (180, 200, 220))
         surf.blit(h, (WIDTH / 2 - h.get_width() / 2, 340))
-        c = self.assets.font_small.render("Press SPACE to return to menu", True, (200, 220, 255))
+        c = self.assets.font_small.render(texts["return_hint"], True, (200, 220, 255))
         surf.blit(c, (WIDTH / 2 - c.get_width() / 2, 400))
 
 
 # ═══════════════════ SECTION 7: MAIN GAME LOOP ═══════════════════
 
 class Game:
-    STATE_MENU, STATE_PLAY, STATE_OVER = "menu", "play", "over"
+    STATE_MENU, STATE_PLAY, STATE_OVER, STATE_SETTINGS = "menu", "play", "over", "settings"
 
     def __init__(self):
         self.fullscreen = False
+        self.window_size = (WIDTH, HEIGHT)
         self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
         pygame.display.set_caption("NEON DEFENDER")
         self.clock = pygame.time.Clock()
@@ -698,11 +866,22 @@ class Game:
         self.renderer = Renderer(self.screen)
         self.hud = HUD()
         self.menu = MainMenu(self.assets)
+        self.settings_menu = SettingsMenu(self.assets)
         self.gameover = GameOverScreen(self.assets)
         self.save = load_save()
+        self.renderer.quality = self.save["graphics"]
         self.parallax_offset = [0.0] * 5
         self.reset_run()
         self.state = self.STATE_MENU
+
+    def texts(self):
+        return TEXTS[self.save["lang"]]
+
+    def quality_particle_mult(self):
+        return {"low": 0.4, "medium": 0.7, "high": 1.0}[self.save["graphics"]]
+
+    def parallax_layer_count(self):
+        return {"low": 2, "medium": 4, "high": 5}[self.save["graphics"]]
 
     def reset_run(self):
         self.player = Player(self.assets)
@@ -710,7 +889,7 @@ class Game:
         self.enemies: List[Enemy] = []
         self.bonuses: List[Bonus] = []
         self.boss = None
-        self.particles = ParticleSystem()
+        self.particles = ParticleSystem(self.quality_particle_mult())
         self.score = 0
         self.combo = 0
         self.combo_timer = 0.0
@@ -718,7 +897,6 @@ class Game:
         self.spawn_timer = 0.0
         self.wave_enemies_left = 0
         self.slowmo = 0.0
-        self.time_slow_factor = 1.0
 
     def start_wave(self):
         self.wave += 1
@@ -730,9 +908,23 @@ class Game:
             self.spawn_timer = 0
 
     def toggle_fullscreen(self):
+        """Manual letterboxed fullscreen: we never ask SDL for a scaled
+        renderer (that is what caused 'failed to create renderer' on some
+        GPUs/drivers). Instead we always render our fixed WIDTH x HEIGHT
+        frame, then blit it scaled onto whatever the OS gives us."""
         self.fullscreen = not self.fullscreen
-        flags = pygame.FULLSCREEN | pygame.SCALED if self.fullscreen else 0
-        self.screen = pygame.display.set_mode((WIDTH, HEIGHT), flags)
+        try:
+            if self.fullscreen:
+                self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+            else:
+                self.screen = pygame.display.set_mode(self.window_size)
+        except pygame.error:
+            # Fall back to a plain windowed mode rather than crashing.
+            self.fullscreen = False
+            try:
+                self.screen = pygame.display.set_mode(self.window_size)
+            except pygame.error:
+                pass
 
     def spawn_enemy(self):
         kind = random.choices(["drone", "fighter", "tank"], weights=[5, 3, max(1, self.wave - 2)])[0]
@@ -864,7 +1056,9 @@ class Game:
 
     def draw_parallax(self, surf, dt):
         speeds = [4, 10, 22, 34, 8]
-        for i, layer in enumerate(self.assets.parallax):
+        n_layers = self.parallax_layer_count()
+        for i in range(n_layers):
+            layer = self.assets.parallax[i]
             self.parallax_offset[i] = (self.parallax_offset[i] + speeds[i] * dt) % HEIGHT
             off = int(self.parallax_offset[i])
             surf.blit(layer, (0, off - HEIGHT))
@@ -884,7 +1078,7 @@ class Game:
         self.particles.draw(surf)
         self.player.draw(surf, self.assets)
         self.hud.draw(surf, self.assets, self.player, self.score, self.wave, self.combo,
-                      self.save.get("highscore", 0))
+                      self.save.get("highscore", 0), self.texts())
 
     def run(self):
         running = True
@@ -902,28 +1096,55 @@ class Game:
                     elif event.key == pygame.K_ESCAPE:
                         if self.state == self.STATE_PLAY:
                             self.state = self.STATE_MENU
+                        elif self.state == self.STATE_SETTINGS:
+                            write_save(self.save)
+                            self.state = self.STATE_MENU
+                    elif event.key == pygame.K_s and self.state == self.STATE_MENU:
+                        self.state = self.STATE_SETTINGS
                     elif event.key == pygame.K_SPACE:
                         if self.state == self.STATE_MENU:
                             self.reset_run()
                             self.state = self.STATE_PLAY
                         elif self.state == self.STATE_OVER:
                             self.state = self.STATE_MENU
+                    elif self.state == self.STATE_SETTINGS:
+                        if event.key in (pygame.K_UP, pygame.K_w):
+                            self.settings_menu.move(-1)
+                        elif event.key in (pygame.K_DOWN, pygame.K_s):
+                            self.settings_menu.move(1)
+                        elif event.key in (pygame.K_LEFT, pygame.K_a):
+                            if self.settings_menu.change_value(self.save, -1):
+                                self.renderer.quality = self.save["graphics"]
+                                self.particles.set_quality_mult(self.quality_particle_mult())
+                        elif event.key in (pygame.K_RIGHT, pygame.K_d):
+                            if self.settings_menu.change_value(self.save, 1):
+                                self.renderer.quality = self.save["graphics"]
+                                self.particles.set_quality_mult(self.quality_particle_mult())
+                        elif event.key == pygame.K_RETURN:
+                            if self.settings_menu.FIELDS[self.settings_menu.selected] == "back":
+                                write_save(self.save)
+                                self.state = self.STATE_MENU
 
             keys = pygame.key.get_pressed()
+            texts = self.texts()
 
             frame = pygame.Surface((WIDTH, HEIGHT))
             if self.state == self.STATE_MENU:
                 frame.fill(BLACK)
                 self.draw_parallax(frame, dt)
                 self.menu.update(dt)
-                self.menu.draw(frame, self.save.get("highscore", 0))
+                self.menu.draw(frame, self.save.get("highscore", 0), texts)
+            elif self.state == self.STATE_SETTINGS:
+                frame.fill(BLACK)
+                self.draw_parallax(frame, dt)
+                self.settings_menu.draw(frame, self.save, texts)
             elif self.state == self.STATE_PLAY:
                 self.update_play(dt, keys)
                 self.draw_play(frame, dt)
             elif self.state == self.STATE_OVER:
                 self.draw_parallax(frame, dt)
                 self.gameover.draw(frame, self.score, self.save.get("highscore", 0),
-                                    getattr(self, "_new_record", False))
+                                    getattr(self, "_new_record", False), texts)
 
             ca = int(clamp(self.renderer.shake_mag * 0.6, 0, 6))
             frame = self.renderer.apply_bloom(frame)
@@ -934,8 +1155,18 @@ class Game:
             self.renderer.apply_grain(frame, 4)
 
             ox, oy = self.renderer.shake_offset()
+
+            # Letterboxed present: scale our fixed-size frame to whatever
+            # the real window/screen size is (handles fullscreen safely).
+            screen_w, screen_h = self.screen.get_size()
+            scale = min(screen_w / WIDTH, screen_h / HEIGHT)
+            out_w, out_h = int(WIDTH * scale), int(HEIGHT * scale)
             self.screen.fill(BLACK)
-            self.screen.blit(frame, (ox, oy))
+            if (out_w, out_h) != (screen_w, screen_h):
+                scaled = pygame.transform.smoothscale(frame, (out_w, out_h))
+                self.screen.blit(scaled, ((screen_w - out_w) // 2 + ox, (screen_h - out_h) // 2 + oy))
+            else:
+                self.screen.blit(frame, (ox, oy))
             pygame.display.flip()
 
         write_save(self.save)
