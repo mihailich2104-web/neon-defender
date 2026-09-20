@@ -452,7 +452,7 @@ class Particle:
             return
         fade = 0.3 + 0.7 * t
         color = (int(self.color[0] * fade), int(self.color[1] * fade), int(self.color[2] * fade))
-        pygame.draw.circle(surf, color, (int(self.x), int(self.y)), max(1, int(s)), special_flags=pygame.BLEND_RGB_ADD)
+        pygame.draw.circle(surf, color, (int(self.x), int(self.y)), max(1, int(s)))
 
 
 class ParticleSystem:
@@ -534,7 +534,7 @@ class ParticleSystem:
         for s in self.shockwaves:
             t = clamp(s["life"] / s["max_life"], 0, 1)
             col = (int(NEON_CYAN[0] * t), int(NEON_CYAN[1] * t), int(NEON_CYAN[2] * t))
-            pygame.draw.circle(surf, col, (int(s["x"]), int(s["y"])), int(s["r"]), 3, special_flags=pygame.BLEND_RGB_ADD)
+            pygame.draw.circle(surf, col, (int(s["x"]), int(s["y"])), int(s["r"]), 3)
         for l in self.lightning:
             pts = [l["a"]]
             x1, y1 = l["a"]
@@ -642,7 +642,7 @@ class Player:
             return
         surf.blit(self.sprite, (self.x - self.sprite.get_width() / 2, self.y - self.sprite.get_height() / 2))
         if self.shield:
-            pygame.draw.circle(surf, NEON_CYAN, (int(self.x), int(self.y)), 34, 2, special_flags=pygame.BLEND_RGB_ADD)
+            pygame.draw.circle(surf, NEON_CYAN, (int(self.x), int(self.y)), 34, 2)
 
 
 class Enemy:
