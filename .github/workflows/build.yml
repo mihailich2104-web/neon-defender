@@ -1,0 +1,61 @@
+name: Build NeonDefender Setup.exe
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pygame numpy pyinstaller pillow
+
+      - name: Build exe with PyInstaller
+        run: |
+          pyinstaller --onefile --noconsole --name NeonDefender game.py
+
+      - name: Install Inno Setup
+        run: |
+          choco install innosetup -y
+
+      - name: Write Inno Setup script
+        shell: bash
+        run: |
+          cat > installer.iss << 'EOF'
+          [Setup]
+          AppName=Neon Defender
+          AppVersion=1.0
+          DefaultDirName={autopf}\NeonDefender
+          DefaultGroupName=Neon Defender
+          OutputBaseFilename=Setup
+          OutputDir=dist_installer
+          Compression=lzma
+          SolidCompression=yes
+
+          [Files]
+          Source: "dist\NeonDefender.exe"; DestDir: "{app}"; Flags: ignoreversion
+
+          [Icons]
+          Name: "{group}\Neon Defender"; Filename: "{app}\NeonDefender.exe"
+          Name: "{autodesktop}\Neon Defender"; Filename: "{app}\NeonDefender.exe"
+          EOF
+
+      - name: Compile installer
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+
+      - name: Upload Setup.exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeonDefender-Setup
+          path: dist_installer/Setup.exe
